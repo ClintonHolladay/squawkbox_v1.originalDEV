@@ -63,8 +63,8 @@ bool alarmSwitch2 = false;
 bool alarmSwitch3 = false;
 bool alarmSwitch4 = false;
 bool msgswitch = false;
-#define MAX485_DE 3
-#define MAX485_RE_NEG 2
+const int MAX485_DE = 3
+const int MAX485_RE_NEG= 2
 ModbusMaster node;
 
 
@@ -157,6 +157,10 @@ void loop()
 
 void resetCounters()
 {
+  
+  
+  
+  
   if (primaryCutoff == LOW)
   {
     alarmSwitch = false;
