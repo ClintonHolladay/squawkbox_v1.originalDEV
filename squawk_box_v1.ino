@@ -2,9 +2,9 @@
 #include <ModbusMaster.h>
 File myFile;
 //The following const int pins are all pre-run in the PCB:
-const int low1 = 5;
-const int low2 = 6;
-const int alarmPin = 8;   //honeywell alarm terminal (terminal 3 on honeywell)
+const int low1 = 4;
+const int low2 = 5;
+const int alarmPin = 6;   //honeywell alarm terminal (terminal 3 on honeywell)
 const int hplcIN = 14;
 const int hplcOUT = 15;
 const int MAX485_DE = 3;  //to modbus module
@@ -49,7 +49,7 @@ char contactToArray1[25];
 char contactToArray2[25];
 char contactToArray3[25];
 char urlHeaderArray[100];
-unsigned char data = 0;
+
 char incomingChar;
 
 unsigned long currentMillis = 0;
@@ -80,7 +80,7 @@ void setup() {
 
   Serial.begin(9600);
   Serial1.begin(19200);
-  Serial.println(F("This is squawkbox v2.0 sketch."));
+  Serial.println(F("This is squawkbox v1.0 sketch."));
 
   pinMode(low1, INPUT);
   pinMode(low2, INPUT);
@@ -100,7 +100,6 @@ void setup() {
   SIMboot();
 
   // Give time for the SIM module to turn on and wake up
-  delay(8000);
 
   loadContacts(); //run the SD card function.
 
@@ -123,8 +122,8 @@ void loop()
   HPLC();
   timedmsg();
   SMSRequest();
-//readModbus();
-//delay(300);
+  //zreadModbus();
+  //delay(300);
 }
 
 
@@ -284,7 +283,7 @@ void HPLC()
     if ( difference4 >= debounceInterval)
     {
       Serial.println("Sending HPLC alarm message");
-      //sendSMS(urlHeaderArray, contactToArray1, contactFromArray1, HLPCbody);
+      sendSMS(urlHeaderArray, contactToArray1, contactFromArray1, HLPCbody);
       //sendSMS(urlHeaderArray, contactToArray2, contactFromArray1, HLPCbody);
       //sendSMS(urlHeaderArray, contactToArray3, contactFromArray1, HLPCbody);
       delay(100);
@@ -302,7 +301,7 @@ void HPLC()
   }
   else
   {
-    if ((hlpcCOMMON == LOW) || (hlpcCounter == 1) || ((hlpcCOMMON == HIGH) && hlpcNC == (HIGH)))
+    if (hlpcNC == (HIGH))
     {
       alarmSwitch4 = false;
       difference4 = 0;
@@ -350,15 +349,15 @@ void sendSMS(char pt1[], char pt2[], char pt3[], char pt4[])
 }
 void getResponse()
 {
-
+unsigned char response_buffer = 0;
   if (Serial1.available())
   {
     while (Serial1.available())
     {
-      data = Serial1.read();
-      Serial.write(data);
+      response_buffer = Serial1.read();
+      Serial.write(response_buffer);
     }
-    data = 0;
+    response_buffer = 0;
   }
   delay(500);
 }
@@ -392,7 +391,7 @@ void SMSRequest()
   if (Serial1.available() > 0) {
 
     incomingChar = Serial1.read();
-    Serial.print(incomingChar);
+
     if (incomingChar == 'C') {
       delay(100);
       Serial.print(incomingChar);
@@ -642,10 +641,45 @@ void readModbus()
 
 void SIMboot()
 {
-  digitalWrite(SIMpin, HIGH);
-  delay(3000);
-  digitalWrite(SIMpin, LOW);
+//This function only boots the SIM module if it needs to be booted
+//This prevents nuisance power-downs upon startup
+
+unsigned char sim_buffer = 0;
+
+  for (int i = 0; i < 10; i++)
+  {
+    for (int j = 0; j < 5; j++)
+    {
+      Serial1.print("AT\r"); //blank AT command elicits a response of OK
+      delay(50);
+    }
+
+    if (Serial1.available())
+    {
+      while (Serial1.available())
+      {
+        sim_buffer = Serial1.read();
+        Serial.write(sim_buffer);
+      }
+      sim_buffer = 0;
+      Serial.println("SIM module appears to be on.  No need to boot");
+      return;
+    }
+
+
+    else {
+      Serial.println("SIM module appears to be off.  Attempting boot...");
+      digitalWrite(SIMpin, HIGH);
+      delay(3000);
+      digitalWrite(SIMpin, LOW);
+      Serial.println("boot attempted.  wait 10 seconds");
+      delay(10000);
+    }
+
+  }
 }
+
+
 
 void initiateSim()
 {
@@ -665,7 +699,7 @@ void initiateSim()
   Serial1.print("AT\r");
   getResponse();
   //SIM MODULE SETUP---
-  Serial1.print("AT+CGDCONT=1,\"IP\",\"super\"\r");  //"super" is the key required to log onto the network using Twilio SuperSIM
+  Serial1.print("AT+CGDCONT = 1, \"IP\",\"super\"\r"); //"super" is the key required to log onto the network using Twilio SuperSIM
   delay(500);
   getResponse();
   Serial1.print("AT+COPS=1,2,\"310410\"\r"); //310410 is AT&T's network code https://www.msisdn.net/mccmnc/310410/
