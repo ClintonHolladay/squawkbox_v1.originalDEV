@@ -1,2 +1,2 @@
 # squawk-box
-This repository is for all of the versions of the microcontroller-based squawk box.  
+This repository is for the most basic versions of the AB3D squawk box.  Versions in this repository are capable of sending text messages for alarms or routine text messages as status indicators.  These versions do not include local or cloud-based data logging.  They also do not include a UI with a screen.    
