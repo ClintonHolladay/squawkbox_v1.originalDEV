@@ -1,10 +1,12 @@
-#include <SD.h>;
+#include <SD.h>
 #include <ModbusMaster.h>
-
 File myFile;
-const int low1 = 4;
-const int low2 = 5;
+const int low1 = 5;
+const int low2 = 6;
 const int alarmPin = 8;
+const int MAX485_DE = 3;
+const int MAX485_RE_NEG = 2;
+const int SIMpin = A3;
 const int debounceInterval = 3000;
 int primaryCutoff;
 int counter1;
@@ -12,8 +14,9 @@ int secondaryCutoff;
 int counter2;
 int alarm;
 int counter3;
-int hplcIN = A2;
-int hplcOUT = A1;
+int SIMbuttState;
+int hplcIN = 14;
+int hplcOUT = 15;
 int hlpcCOMMON;
 int hlpcNC;
 int counter4;
@@ -28,12 +31,14 @@ char HLPCbody[] = "Body=High%20Pressure%20Alarm\"\r";
 char CHECKbody[] = "Body=good%20check\"\r";
 char BCbody[] = "Body=Boiler%20Down\"\r";
 char fault1[] = "Body=Fault%20Code1%20No%20Purge%20Card\"\r";
+
 String URLheader = "";
 String conFrom1 = "";
 String conFrom2 = "";
 String conTo1 = "";
 String conTo2 = "";
 String conTo3 = "";
+
 char contactFromArray1[25];
 char contactFromArray2[25];
 char contactToArray1[25];
@@ -53,7 +58,6 @@ unsigned long fifmintimer = 900000;
 unsigned long fivmintimer = 300000;
 unsigned long dailytimer = 86400000;
 unsigned long msgtimer1 = 0;
-
 unsigned long alarmTime = 0;
 unsigned long alarmTime2 = 0;
 unsigned long alarmTime3 = 0;
@@ -64,19 +68,16 @@ bool alarmSwitch2 = false;
 bool alarmSwitch3 = false;
 bool alarmSwitch4 = false;
 bool msgswitch = false;
-const int MAX485_DE = 3
-const int MAX485_RE_NEG= 2
+
 ModbusMaster node;
 
 
 void setup() {
 
-  pinMode(22, OUTPUT);
-  digitalWrite(22, LOW);
   Serial.begin(9600);
   Serial1.begin(19200);
-  // Give time to your GSM shield log on to network
-  delay(10000);
+  Serial.println(F("This is A1_V2.0.1 sketch."));
+
   pinMode(low1, INPUT);
   pinMode(low2, INPUT);
   pinMode(alarmPin, INPUT);
@@ -84,7 +85,7 @@ void setup() {
   pinMode(hplcOUT, INPUT);
   pinMode(MAX485_RE_NEG, OUTPUT);
   pinMode(MAX485_DE, OUTPUT);
-
+  pinMode(SIMpin, OUTPUT);
   digitalWrite(MAX485_RE_NEG, 0);
   digitalWrite(MAX485_DE, 0);
 
@@ -92,11 +93,15 @@ void setup() {
   node.preTransmission(preTransmission);
   node.postTransmission(postTransmission);
 
+  SIMboot();
+  // Give time to your GSM shield log on to network
+  delay(15000);
 
   loadContacts();
-
+  Serial.println(F("Contacts Loaded.  Booting SIM module.  Initiating wakeup sequence..."));
   delay(2000);
   //PUT SIM MODULE WAKEUP HERE
+  Serial.println("Hey!  Wake up!");
   Serial1.print("AT\r"); //Manufacturer identification
   getResponse();
   Serial1.print("AT\r"); //Manufacturer identification
@@ -108,8 +113,8 @@ void setup() {
   Serial1.print("AT\r"); //Manufacturer identification
   getResponse();
   //SIM MODULE SETUP---
-  Serial1.print("AT+CGDCONT=1\"IP\",\"super\"\r");
-  delay(100);
+  Serial1.print("AT+CGDCONT=1,\"IP\",\"super\"\r");
+  delay(500);
   getResponse();
   Serial1.print("AT+COPS=1,2,\"310410\"\r");
   delay(5000);
@@ -130,9 +135,9 @@ void setup() {
   Serial1.print("AT+CNMI=2,2,0,0,0\r");
   delay(100);
   getResponse();
-  //sendSMS(urlHeaderArray, contactFromArray1, contactToArray1, SetCombody);
+  sendSMS(urlHeaderArray, contactFromArray1, contactToArray1, SetCombody);
   sendSMS(urlHeaderArray, contactFromArray1, contactToArray2, SetCombody);
-  sendSMS(urlHeaderArray, contactFromArray1, contactToArray3, SetCombody);
+  //sendSMS(urlHeaderArray, contactFromArray1, contactToArray3, SetCombody);
   delay(2000);
 
   Serial.println(F("Setup complete. Entering main loop"));
@@ -158,10 +163,6 @@ void loop()
 
 void resetCounters()
 {
-  
-  
-  
-  
   if (primaryCutoff == LOW)
   {
     alarmSwitch = false;
@@ -186,6 +187,9 @@ void resetCounters()
   }
   if ((hlpcCOMMON == HIGH) && (hlpcNC == HIGH))
   {
+    alarmSwitch4 = false;
+    difference4 = 0;
+    alarmTime4 = 0;
     counter4 = 0;
   }
   //this next line may not be necessary, but I think it will help prevent against false alarms on HPLC
@@ -248,7 +252,7 @@ void secondary_LW()
     {
       alarmTime2 = currentMillis;
       alarmSwitch2 = true;
-      Serial.println("alarmSwitch2 is true");
+      Serial.println(F("alarmSwitch2 is true"));
     }
     difference2 = currentMillis - alarmTime2;
 
@@ -258,7 +262,7 @@ void secondary_LW()
       sendSMS(urlHeaderArray, contactToArray1, contactFromArray1, LW2body);
       sendSMS(urlHeaderArray, contactToArray2, contactFromArray1, LW2body);
       //sendSMS(urlHeaderArray, contactToArray3, contactFromArray1, LW2body);
-      Serial.println("message sent or simulated");
+      Serial.println(F("message sent or simulated"));
       delay(10);
       counter2 = 1;
       difference2 = 0;
@@ -299,14 +303,14 @@ void Honeywell_alarm()
 
     if ( difference3 >= debounceInterval)
     {
-      Serial.println("sending alarm message");
+      Serial.println(F("sending alarm message"));
       sendSMS(urlHeaderArray, contactToArray1, contactFromArray1, BCbody);
       sendSMS(urlHeaderArray, contactToArray2, contactFromArray1, BCbody);
       //sendSMS(urlHeaderArray, contactToArray3, contactFromArray1, BCbody);
       delay(100);
-      Serial.println("about to enter modbus reading function...");
+      Serial.println(F("about to enter modbus reading function..."));
       readModbus();
-      Serial.println("message sent or simulated");
+      Serial.println(F("message sent or simulated"));
       counter3 = 1;
       difference3 = 0;
       alarmSwitch3 = false;
@@ -352,7 +356,7 @@ void HPLC()
       sendSMS(urlHeaderArray, contactToArray2, contactFromArray1, HLPCbody);
       //sendSMS(urlHeaderArray, contactToArray3, contactFromArray1, HLPCbody);
       delay(100);
-      Serial.println("message sent or simulated");
+      Serial.println(F("message sent or simulated"));
       counter4 = 1;
       difference4 = 0;
       alarmSwitch4 = false;
@@ -380,11 +384,7 @@ void sendSMS(char pt1[], char pt2[], char pt3[], char pt4[])
 {
 
   char finalURL[250] = "";
-
-  //pt1=urlHeaderArray;
-  //pt2=contactToArray1;
-  //pt3=URLfrom;
-  //pt4=URLbody;
+  
   strcpy(finalURL, pt1);
   strcat(finalURL, pt2);
   strcat(finalURL, pt3);
@@ -392,6 +392,9 @@ void sendSMS(char pt1[], char pt2[], char pt3[], char pt4[])
   delay(500);
   Serial.println(finalURL);
   delay(20);
+  Serial1.print("AT+HTTPTERM\r");
+  delay(1000);
+  getResponse();
   Serial1.print("AT+SAPBR=3,1,\"APN\",\"super\"\r");
   delay(300);
   getResponse();
@@ -409,10 +412,9 @@ void sendSMS(char pt1[], char pt2[], char pt3[], char pt4[])
   delay(100);
   getResponse();
   Serial1.print("AT+HTTPACTION=1\r");
-  delay(4000);
+  delay(5000);
   getResponse();
-  Serial1.print("AT+HTTPTERM\r");
-  delay(1000);
+
   getResponse();
 }
 void getResponse()
@@ -426,6 +428,7 @@ void getResponse()
     }
     data = 0;
   }
+  delay(500);
 }
 
 void timedmsg()
@@ -525,9 +528,9 @@ void loadContacts()
   }
   //convert the String into a character array
   conFrom1.toCharArray(contactFromArray1, 25);
-  Serial.print("The first phone number FROM String is ");
+  Serial.print(F("The first phone number FROM String is "));
   Serial.println(conFrom1);
-  Serial.print("The first phone number FROM char array is ");
+  Serial.print(F("The first phone number FROM char array is "));
   Serial.println(contactFromArray1);
 
   //---------------------------------------------//
@@ -548,14 +551,13 @@ void loadContacts()
   }
   //convert the String into a character array
   conFrom2.toCharArray(contactFromArray2, 25);
-  Serial.print("The first phone number FROM String is ");
+  Serial.print(F("The first phone number FROM String is "));
   Serial.println(conFrom2);
-  Serial.print("The second phone number FROM char array is ");
+  Serial.print(F("The second phone number FROM char array is "));
   Serial.println(contactFromArray2);
 
   //---------------------------------------------//
   //------------------load first contact number-------------//
-
 
   myFile = SD.open("to1.txt");
   if (myFile) {
@@ -572,9 +574,9 @@ void loadContacts()
   }
 
   conTo1.toCharArray(contactToArray1, 25);
-  Serial.print("The first phone number TO String is ");
+  Serial.print(F("The first phone number TO String is "));
   Serial.println(conTo1);
-  Serial.print("The first phone number TO char array is ");
+  Serial.print(F("The first phone number TO char array is "));
   Serial.println(contactToArray1);
 
   //---------------------------------------------//
@@ -582,7 +584,7 @@ void loadContacts()
 
   myFile = SD.open("to2.txt");
   if (myFile) {
-    Serial.println("phone number 2 command");
+    Serial.println(F("phone number 2 command"));
     // read from the file until there's nothing else in it:
     while (myFile.available()) {
       char c = myFile.read();  //gets one byte from serial buffer
@@ -591,13 +593,13 @@ void loadContacts()
     myFile.close();
   } else {
     // if the file didn't open, print an error:
-    Serial.println("error opening to2.txt");
+    Serial.println(F("error opening to2.txt"));
   }
 
   conTo1.toCharArray(contactToArray2, 25);
-  Serial.print("The second phone number TO String is ");
+  Serial.print(F("The second phone number TO String is "));
   Serial.println(conTo2);
-  Serial.print("The second phone number TO char array is ");
+  Serial.print(F("The second phone number TO char array is "));
   Serial.println(contactToArray2);
 
   //---------------------------------------------//
@@ -618,9 +620,9 @@ void loadContacts()
   }
 
   conTo1.toCharArray(contactToArray3, 25);
-  Serial.print("The third phone number TO String is ");
+  Serial.print(F("The third phone number TO String is "));
   Serial.println(conTo3);
-  Serial.print("The third phone number TO char array is ");
+  Serial.print(F("The third phone number TO char array is "));
   Serial.println(contactToArray3);
 
   //---------------------------------------------//
@@ -628,7 +630,7 @@ void loadContacts()
 
   myFile = SD.open("URL.txt");
   if (myFile) {
-    Serial.println("loading URL header");
+    Serial.println(F("loading URL header"));
     // read from the file until there's nothing else in it:
     while (myFile.available()) {
       char c = myFile.read();  //gets one byte from serial buffer
@@ -641,9 +643,9 @@ void loadContacts()
   }
 
   URLheader.toCharArray(urlHeaderArray, 100);
-  Serial.print("The URL header is ");
+  Serial.print(F("The URL header is "));
   Serial.println(URLheader);
-  Serial.print("The URL header array is  ");
+  Serial.print(F("The URL header array is  "));
   Serial.println(urlHeaderArray);
 }
 
@@ -702,4 +704,11 @@ void readModbus()
   {
     sendSMS(urlHeaderArray, contactToArray1, contactFromArray1, "Body=Modbus%20Com%20Fail\"\r");
   }
+}
+
+void SIMboot()
+{
+  digitalWrite(SIMpin, HIGH);
+  delay(3000);
+  digitalWrite(SIMpin, LOW);
 }
